@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0f1115" />
+  <title>FocusLog — Study Tracker</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/svg+xml" href="icon.svg" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="container">
+    <!-- Top Header with Mini Float & Theme Switcher -->
+    <header class="header">
+      <div class="brand-group">
+        <h1>FocusLog</h1>
+        <span class="orientation-badge" id="orientation-badge">Adaptive Layout</span>
+      </div>
+
+      <div class="header-actions">
+        <div class="today-badge">Today: <span id="today-total">0m</span></div>
+        <button type="button" id="pip-btn" class="btn-small btn-float" title="Open floating always-on-top mini timer">
+          ⧉ Mini Float
+        </button>
+        <button type="button" id="theme-toggle-btn" class="btn-small" title="Switch Light / Dark theme">
+          ☀️ Light
+        </button>
+        <button type="button" id="cloud-toggle-btn" class="btn-small" title="Configure Private GitHub Gist Sync">
+          ☁️ <span id="cloud-status-text">Cloud Sync</span>
+        </button>
+      </div>
+    </header>
+    
+    <!-- Private GitHub Gist Cloud Sync Card (Hidden by default) -->
+    <section id="cloud-sync-card" class="card cloud-card" hidden>
+      <div class="section-header">
+        <h2>Private GitHub Gist Cloud Sync</h2>
+        <span id="cloud-last-sync" class="optional-hint">Not connected</span>
+      </div>
+      <p class="cloud-help">
+        Paste a GitHub Personal Access Token (Classic) with the <code>gist</code> scope. FocusLog will automatically create or find your secret sync file across your laptop and phone.
+      </p>
+      <div class="cloud-controls">
+        <input
+          type="password"
+          id="gist-token-input"
+          placeholder="Paste GitHub token (ghp_...)"
+          autocomplete="off"
+        />
+        <button type="button" id="save-cloud-btn" class="btn-small btn-accent">Connect & Sync</button>
+        <button type="button" id="sync-now-btn" class="btn-small">Sync Now</button>
+        <button type="button" id="disconnect-cloud-btn" class="btn-small">Disconnect</button>
+      </div>
+    </section>
+
+    <!-- Adaptive 2-Column Landscape / 1-Column Portrait Grid -->
+    <div class="dashboard-grid">
+      <!-- LEFT COLUMN: Timer Controls & Daily Targets -->
+      <div class="left-col">
+        <!-- Main Timer Card -->
+        <main class="card timer-card">
+          <!-- Post-Session Quick Break Banner -->
+          <div id="break-prompt" class="break-prompt" hidden>
+            <span>Session saved! Start a break:</span>
+            <div class="break-prompt-actions">
+              <button type="button" class="btn-small quick-break-btn" data-mins="5">5m</button>
+              <button type="button" class="btn-small quick-break-btn" data-mins="10">10m</button>
+              <button type="button" class="btn-small quick-break-btn" data-mins="15">15m</button>
+              <button type="button" id="dismiss-break-btn" class="dismiss-btn" title="Dismiss">&times;</button>
+            </div>
+          </div>
+
+          <!-- Timer Mode Switcher -->
+          <div class="mode-switcher">
+            <button type="button" id="mode-stopwatch-btn" class="mode-btn active">Stopwatch</button>
+            <button type="button" id="mode-countdown-btn" class="mode-btn">Countdown</button>
+            <button type="button" id="mode-break-btn" class="mode-btn">Break</button>
+          </div>
+
+          <!-- Countdown Presets -->
+          <div id="countdown-presets" class="preset-bar" hidden>
+            <button type="button" class="preset-pill active" data-mins="25">25m</button>
+            <button type="button" class="preset-pill" data-mins="50">50m</button>
+            <button type="button" class="preset-pill" data-mins="90">90m</button>
+            <input
+              type="number"
+              id="custom-mins-input"
+              class="custom-mins-input"
+              min="1"
+              max="300"
+              placeholder="Custom (m)"
+            />
+          </div>
+
+          <!-- Break Presets -->
+          <div id="break-presets" class="preset-bar" hidden>
+            <button type="button" class="break-pill active" data-mins="5">5m</button>
+            <button type="button" class="break-pill" data-mins="10">10m</button>
+            <button type="button" class="break-pill" data-mins="15">15m</button>
+            <button type="button" class="break-pill" data-mins="20">20m</button>
+          </div>
+
+          <!-- Study Configuration -->
+          <div id="study-fields">
+            <div class="controls-top">
+              <label for="subject-select">Subject</label>
+              <div class="subject-row">
+                <select id="subject-select"></select>
+                <button type="button" id="toggle-subject-btn" class="btn-small">+ New</button>
+              </div>
+
+              <div id="add-subject-row" class="add-subject-row" hidden>
+                <input
+                  type="text"
+                  id="new-subject-input"
+                  placeholder="Enter subject name..."
+                  maxlength="40"
+                />
+                <button type="button" id="save-subject-btn" class="btn-small btn-accent">Add</button>
+              </div>
+            </div>
+
+            <div class="controls-top tag-section">
+              <label>Session Type <span class="optional-hint">(keys 1–4)</span></label>
+              <div id="tag-group" class="tag-group">
+                <button type="button" class="tag-pill active" data-tag="Reading">1. Reading</button>
+                <button type="button" class="tag-pill" data-tag="Practice">2. Practice</button>
+                <button type="button" class="tag-pill" data-tag="Revision">3. Revision</button>
+                <button type="button" class="tag-pill" data-tag="Mock Test">4. Mock Test</button>
+              </div>
+            </div>
+
+            <div class="controls-top note-section">
+              <label for="session-note-input">Chapter / Topic Note <span class="optional-hint">(optional)</span></label>
+              <input
+                type="text"
+                id="session-note-input"
+                class="note-input"
+                placeholder="e.g., Rawls' Theory of Justice — Ch. 4"
+                maxlength="120"
+              />
+            </div>
+          </div>
+
+          <div id="timer-display" class="timer-display">00:00:00</div>
+
+          <div class="button-group">
+            <button id="start-btn" class="btn btn-primary">Start</button>
+            <button id="pause-btn" class="btn btn-secondary" disabled>Pause</button>
+            <button id="finish-btn" class="btn btn-success" disabled>Finish & Save</button>
+          </div>
+
+          <div class="shortcut-hints">
+            <span><kbd>Space</kbd> Start/Pause</span>
+            <span><kbd>Shift</kbd>+<kbd>Enter</kbd> Save</span>
+            <span><kbd>1</kbd>–<kbd>4</kbd> Type</span>
+          </div>
+        </main>
+
+        <!-- Overall Daily Study Goal Progress Card -->
+        <section class="card goal-card">
+          <div class="goal-header">
+            <div>
+              <span class="stat-label">Daily Study Goal</span>
+              <div class="goal-numbers">
+                <span id="daily-goal-text">0m / 4h 0m</span>
+                <span id="daily-goal-percent" class="goal-percent">0%</span>
+              </div>
+            </div>
+            <button type="button" id="edit-goal-btn" class="btn-small">Edit Goal</button>
+          </div>
+
+          <div class="progress-track">
+            <div id="daily-goal-fill" class="progress-fill" style="width: 0%;"></div>
+          </div>
+
+          <div id="goal-edit-row" class="add-subject-row" hidden>
+            <input
+              type="number"
+              id="daily-goal-input"
+              min="10"
+              max="1440"
+              step="10"
+              placeholder="Daily target in minutes (e.g. 240)"
+            />
+            <button type="button" id="save-goal-btn" class="btn-small btn-accent">Save</button>
+          </div>
+        </section>
+
+        <!-- Per-Subject Daily Targets & Subject Manager -->
+        <section class="card">
+          <div class="section-header">
+            <h2>Subject Daily Targets</h2>
+            <button type="button" id="edit-targets-btn" class="btn-small">Manage Subjects</button>
+          </div>
+          <div id="subject-targets-list" class="subject-targets-list"></div>
+        </section>
+      </div>
+
+      <!-- RIGHT COLUMN: KPIs, Share Price, Analytics Charts, Heatmap & History -->
+      <div class="right-col">
+        <!-- KPI Summary Row -->
+        <section class="stats-grid">
+          <div class="card stat-card">
+            <span class="stat-label">Current Streak</span>
+            <span id="streak-value" class="stat-value">0 days</span>
+          </div>
+          <div class="card stat-card">
+            <span class="stat-label">Share Price</span>
+            <div class="share-kpi-row">
+              <span id="share-price-value" class="stat-value">$100.00</span>
+              <span id="share-price-delta" class="share-delta">0.0%</span>
+            </div>
+          </div>
+          <div class="card stat-card">
+            <span class="stat-label">Last 7 Days</span>
+            <span id="week-total" class="stat-value">0m</span>
+          </div>
+          <div class="card stat-card">
+            <span class="stat-label">All-Time Total</span>
+            <span id="alltime-total" class="stat-value">0m</span>
+          </div>
+        </section>
+
+        <!-- Athenify-Style 30-Day Share Price Curve -->
+        <section class="card">
+          <div class="section-header">
+            <h2>Focus Share Price (30-Day Consistency Index)</h2>
+            <span class="share-formula-hint">+4 pts/hr • +2.5 goal bonus • −3.5/missed day</span>
+          </div>
+          <div class="share-chart-box">
+            <canvas id="share-chart"></canvas>
+          </div>
+        </section>
+
+        <!-- Analytics Charts -->
+        <section class="charts-grid">
+          <div class="card">
+            <h2>Subject Balance (Mins)</h2>
+            <div class="chart-box">
+              <canvas id="subject-chart"></canvas>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2>Last 7 Days (Mins)</h2>
+            <div class="chart-box">
+              <canvas id="daily-chart"></canvas>
+            </div>
+          </div>
+        </section>
+
+        <!-- 12-Week Calendar Heatmap -->
+        <section class="card">
+          <div class="section-header">
+            <h2>12-Week Consistency</h2>
+            <div class="heatmap-legend">
+              <span>Less</span>
+              <span class="heat-cell level-0"></span>
+              <span class="heat-cell level-1"></span>
+              <span class="heat-cell level-2"></span>
+              <span class="heat-cell level-3"></span>
+              <span class="heat-cell level-4"></span>
+              <span>More</span>
+            </div>
+          </div>
+          <div class="heatmap-wrapper">
+            <div id="heatmap-grid" class="heatmap-grid"></div>
+          </div>
+        </section>
+
+        <!-- Logged Sessions Feed, Manual Entry & Filters -->
+        <section class="card">
+          <div class="section-header">
+            <h2>Recent Sessions</h2>
+            <div class="backup-controls">
+              <button type="button" id="toggle-manual-btn" class="btn-small btn-accent">+ Log Past</button>
+              <button type="button" id="export-btn" class="btn-small">Export JSON</button>
+              <button type="button" id="import-btn" class="btn-small">Import JSON</button>
+              <input type="file" id="import-file" accept=".json" hidden />
+            </div>
+          </div>
+
+          <!-- Manual Offline Session Entry Form -->
+          <div id="manual-entry-form" class="manual-form" hidden>
+            <div class="manual-form-title">Log Offline / Past Study Session</div>
+
+            <div class="manual-grid">
+              <div class="manual-field">
+                <label for="manual-subject">Subject</label>
+                <select id="manual-subject"></select>
+              </div>
+
+              <div class="manual-field">
+                <label for="manual-tag">Session Type</label>
+                <select id="manual-tag">
+                  <option value="Reading">Reading</option>
+                  <option value="Practice">Practice</option>
+                  <option value="Revision">Revision</option>
+                  <option value="Mock Test">Mock Test</option>
+                </select>
+              </div>
+
+              <div class="manual-field">
+                <label for="manual-date">Date</label>
+                <input type="date" id="manual-date" />
+              </div>
+
+              <div class="manual-field">
+                <label>Duration (Hrs / Mins)</label>
+                <div class="duration-inputs">
+                  <input type="number" id="manual-hours" min="0" max="23" value="1" aria-label="Hours" />
+                  <span>h</span>
+                  <input type="number" id="manual-mins" min="0" max="59" value="0" aria-label="Minutes" />
+                  <span>m</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="manual-field">
+              <label for="manual-note">Chapter / Topic Note <span class="optional-hint">(optional)</span></label>
+              <input
+                type="text"
+                id="manual-note"
+                class="note-input"
+                placeholder="e.g., Solved 50 PYQs on Indian Polity"
+                maxlength="120"
+              />
+            </div>
+
+            <div class="manual-actions">
+              <button type="button" id="cancel-manual-btn" class="btn-small">Cancel</button>
+              <button type="button" id="save-manual-btn" class="btn-small btn-accent">Save Session</button>
+            </div>
+          </div>
+
+          <!-- Filter & Search Toolbar -->
+          <div class="filter-bar">
+            <input
+              type="search"
+              id="filter-search"
+              class="filter-input"
+              placeholder="Search notes or subjects..."
+            />
+            <select id="filter-subject" class="filter-select">
+              <option value="ALL">All Subjects</option>
+            </select>
+            <select id="filter-tag" class="filter-select">
+              <option value="ALL">All Types</option>
+              <option value="Reading">Reading</option>
+              <option value="Practice">Reading/Practice</option>
+              <option value="Revision">Revision</option>
+              <option value="Mock Test">Mock Test</option>
+            </select>
+          </div>
+
+          <div id="filter-summary" class="filter-summary"></div>
+
+          <ul id="session-list" class="session-list">
+            <li class="empty-state">No sessions logged yet. Hit Start to begin.</li>
+          </ul>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
