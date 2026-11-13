@@ -606,6 +606,14 @@ function startQuickBreak(mins) {
 }
 
 function deleteSession(id) {
+  const target = sessions.find((s) => s.id === id);
+  const details = target
+    ? `"${target.subject}" (${formatBadgeDuration(target.durationMs)} on ${target.date || "Today"})`
+    : "this study session";
+
+  const confirmed = confirm(`Are you sure you want to delete ${details}?`);
+  if (!confirmed) return;
+
   if (typeof recordDeletedSessionId === "function") recordDeletedSessionId(id);
   sessions = sessions.filter((session) => session.id !== id);
   saveData();
@@ -704,6 +712,11 @@ function handleAddSubject() {
     return;
   }
 
+  // If re-adding a previously deleted subject, remove it from the deleted list
+  if (typeof unrecordDeletedSubjectName === "function") {
+    unrecordDeletedSubjectName(cleanName);
+  }
+
   const assignedColor = COLOR_PALETTE[subjects.length % COLOR_PALETTE.length];
   subjects.push({ name: cleanName, color: assignedColor, dailyTargetMins: 60 });
   saveData();
@@ -724,6 +737,10 @@ function deleteSubjectAtIndex(idx) {
     `Remove "${targetSubj.name}" from your subject list? (Past logged sessions for "${targetSubj.name}" will remain in your history.)`
   );
   if (!confirmed) return;
+
+  if (typeof recordDeletedSubjectName === "function") {
+    recordDeletedSubjectName(targetSubj.name);
+  }
 
   subjects.splice(idx, 1);
   saveData();
@@ -746,6 +763,13 @@ function saveManagedSubjects() {
     const newTarget = rawTarget >= 5 && rawTarget <= 720 ? rawTarget : oldSubj.dailyTargetMins;
 
     if (newName !== oldSubj.name) {
+      // Mark old name as deleted so Cloud Sync doesn't re-import it
+      if (typeof recordDeletedSubjectName === "function") {
+        recordDeletedSubjectName(oldSubj.name);
+      }
+      if (typeof unrecordDeletedSubjectName === "function") {
+        unrecordDeletedSubjectName(newName);
+      }
       sessions.forEach((s) => {
         if (s.subject === oldSubj.name) {
           s.subject = newName;
@@ -1394,10 +1418,12 @@ applyTheme(settings.theme);
 updateOrientationBadge();
 renderSubjectDropdowns();
 refreshAllViews();
+
 // 14. PRIVATE GITHUB GIST CLOUD SYNC ENGINE
 const GIST_TOKEN_KEY = "focuslog_gist_token_v1";
 const GIST_ID_KEY = "focuslog_gist_id_v1";
 const DELETED_IDS_KEY = "focuslog_deleted_ids_v1";
+const DELETED_SUBJECTS_KEY = "focuslog_deleted_subjects_v1";
 const GIST_FILENAME = "focuslog-cloud-sync.json";
 
 const cloudToggleBtn = document.getElementById("cloud-toggle-btn");
@@ -1412,6 +1438,7 @@ const disconnectCloudBtn = document.getElementById("disconnect-cloud-btn");
 let gistToken = localStorage.getItem(GIST_TOKEN_KEY) || "";
 let gistId = localStorage.getItem(GIST_ID_KEY) || "";
 let deletedSessionIds = JSON.parse(localStorage.getItem(DELETED_IDS_KEY) || "[]");
+let deletedSubjectNames = JSON.parse(localStorage.getItem(DELETED_SUBJECTS_KEY) || "[]");
 let pushTimeout = null;
 let isSyncing = false;
 
@@ -1420,6 +1447,20 @@ function recordDeletedSessionId(id) {
     deletedSessionIds.push(id);
     localStorage.setItem(DELETED_IDS_KEY, JSON.stringify(deletedSessionIds));
   }
+}
+
+function recordDeletedSubjectName(name) {
+  const lower = name.trim().toLowerCase();
+  if (!deletedSubjectNames.includes(lower)) {
+    deletedSubjectNames.push(lower);
+    localStorage.setItem(DELETED_SUBJECTS_KEY, JSON.stringify(deletedSubjectNames));
+  }
+}
+
+function unrecordDeletedSubjectName(name) {
+  const lower = name.trim().toLowerCase();
+  deletedSubjectNames = deletedSubjectNames.filter((n) => n !== lower);
+  localStorage.setItem(DELETED_SUBJECTS_KEY, JSON.stringify(deletedSubjectNames));
 }
 
 function setCloudBadge(status, detailText = "") {
@@ -1431,14 +1472,12 @@ function setCloudBadge(status, detailText = "") {
   }
 }
 
-// Automatically finds existing FocusLog secret Gist or creates one on first run
 async function findOrCreateSyncGist(token) {
   const headers = {
     Authorization: `Bearer ${token}`,
     Accept: "application/vnd.github+json"
   };
 
-  // 1. Search existing Gists on the user's account for focuslog-cloud-sync.json
   const listRes = await fetch("https://api.github.com/gists?per_page=100", { headers });
   if (!listRes.ok) {
     throw new Error("Invalid GitHub token or network error.");
@@ -1450,14 +1489,14 @@ async function findOrCreateSyncGist(token) {
     return existing.id;
   }
 
-  // 2. If none exists yet, create a new Secret (Private) Gist
   const initialPayload = {
-    version: 7,
+    version: 8,
     updatedAt: Date.now(),
     settings,
     subjects,
     sessions,
-    deletedSessionIds
+    deletedSessionIds,
+    deletedSubjectNames
   };
 
   const createRes = await fetch("https://api.github.com/gists", {
@@ -1482,7 +1521,6 @@ async function findOrCreateSyncGist(token) {
   return created.id;
 }
 
-// Two-way smart merge: combines laptop + phone sessions without losing either
 async function syncWithGist(pushOnly = false) {
   if (!gistToken || isSyncing) return;
   isSyncing = true;
@@ -1501,7 +1539,6 @@ async function syncWithGist(pushOnly = false) {
     }
 
     if (!pushOnly) {
-      // Pull remote state first and merge with local state
       const getRes = await fetch(`https://api.github.com/gists/${gistId}`, { headers });
       if (getRes.ok) {
         const gistData = await getRes.json();
@@ -1511,37 +1548,46 @@ async function syncWithGist(pushOnly = false) {
           const remote = JSON.parse(fileObj.content);
 
           // 1. Merge deleted session tombstones
-          const remoteDeleted = Array.isArray(remote.deletedSessionIds) ? remote.deletedSessionIds : [];
-          deletedSessionIds = Array.from(new Set([...deletedSessionIds, ...remoteDeleted]));
+          const remoteDeletedSessions = Array.isArray(remote.deletedSessionIds) ? remote.deletedSessionIds : [];
+          deletedSessionIds = Array.from(new Set([...deletedSessionIds, ...remoteDeletedSessions]));
           localStorage.setItem(DELETED_IDS_KEY, JSON.stringify(deletedSessionIds));
-          const deletedSet = new Set(deletedSessionIds);
+          const deletedSessionSet = new Set(deletedSessionIds);
 
-          // 2. Merge sessions by unique ID
+          // 2. Merge deleted subject tombstones
+          const remoteDeletedSubjects = Array.isArray(remote.deletedSubjectNames) ? remote.deletedSubjectNames : [];
+          deletedSubjectNames = Array.from(new Set([...deletedSubjectNames, ...remoteDeletedSubjects]));
+          localStorage.setItem(DELETED_SUBJECTS_KEY, JSON.stringify(deletedSubjectNames));
+          const deletedSubjectSet = new Set(deletedSubjectNames);
+
+          // 3. Merge sessions by unique ID
           const sessionMap = new Map();
           if (Array.isArray(remote.sessions)) {
             remote.sessions.forEach((s) => {
-              if (!deletedSet.has(s.id)) sessionMap.set(s.id, s);
+              if (!deletedSessionSet.has(s.id)) sessionMap.set(s.id, s);
             });
           }
           sessions.forEach((s) => {
-            if (!deletedSet.has(s.id)) sessionMap.set(s.id, s);
+            if (!deletedSessionSet.has(s.id)) sessionMap.set(s.id, s);
           });
           sessions = Array.from(sessionMap.values());
           sortSessionsNewestFirst();
 
-          // 3. Merge custom subjects by name
+          // 4. Filter out any locally or remotely deleted subjects, then merge
+          subjects = subjects.filter((s) => !deletedSubjectSet.has(s.name.toLowerCase()));
           if (Array.isArray(remote.subjects)) {
             remote.subjects.forEach((remSubj) => {
-              const exists = subjects.some(
-                (locSubj) => locSubj.name.toLowerCase() === remSubj.name.toLowerCase()
-              );
-              if (!exists) {
+              const lowerName = remSubj.name.toLowerCase();
+              const exists = subjects.some((locSubj) => locSubj.name.toLowerCase() === lowerName);
+              if (!exists && !deletedSubjectSet.has(lowerName)) {
                 subjects.push(remSubj);
               }
             });
           }
 
-          // Save merged data locally and update UI
+          if (subjects.length === 0) {
+            subjects = [...DEFAULT_SUBJECTS];
+          }
+
           localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
           localStorage.setItem(SUBJECTS_KEY, JSON.stringify(subjects));
           renderSubjectDropdowns();
@@ -1550,14 +1596,14 @@ async function syncWithGist(pushOnly = false) {
       }
     }
 
-    // Push unified state back to Secret Gist
     const mergedPayload = {
-      version: 7,
+      version: 8,
       updatedAt: Date.now(),
       settings,
       subjects,
       sessions,
-      deletedSessionIds
+      deletedSessionIds,
+      deletedSubjectNames
     };
 
     const patchRes = await fetch(`https://api.github.com/gists/${gistId}`, {
@@ -1594,7 +1640,6 @@ function scheduleCloudPush() {
   }, 1200);
 }
 
-// Wire Cloud Sync UI Buttons
 if (cloudToggleBtn) {
   cloudToggleBtn.addEventListener("click", () => {
     cloudSyncCard.hidden = !cloudSyncCard.hidden;
@@ -1610,7 +1655,7 @@ if (cloudToggleBtn) {
       return;
     }
     gistToken = rawToken;
-    gistId = ""; // Reset so it auto-discovers or creates the Gist
+    gistId = "";
     localStorage.setItem(GIST_TOKEN_KEY, gistToken);
     localStorage.removeItem(GIST_ID_KEY);
     await syncWithGist(false);
@@ -1627,9 +1672,8 @@ if (cloudToggleBtn) {
     setCloudBadge("Cloud Sync", "Disconnected");
   });
 
-  // Auto-sync whenever the app opens or you switch back to the tab
   if (gistToken) {
-    setCloudBadge("Connected", " Syncing on startup...");
+    setCloudBadge("Connected", "Syncing on startup...");
     syncWithGist(false);
   }
 
